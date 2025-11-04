@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ANPR Toll System Simulator</title>
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header"><h1>ANPR Toll System Simulator</h1></header>
+
+        <main class="grid">
+            <div>
+                <section id="main-menu-card" class="card">
+                    <h2 class="card-header">Main Menu</h2>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <button onclick="showView('zone-creator-card')" class="btn" style="background-color: var(--green);">Create New Zone</button>
+                        <button onclick="showView('registration-card')" class="btn">Register Operator</button>
+                        <button onclick="showView('login-card')" class="btn">Operator Login</button>
+                        <button onclick="showView('pathway-manager-card')" class="btn" style="background-color: var(--gray-600); grid-column: 1 / -1;">Pathway Manager</button>
+                    </div>
+                </section>
+
+                <section id="zone-creator-card" class="card hidden">
+                    <h2 class="card-header">1. Zone Creator</h2>
+                    <div class="form-group"><label for="zone-name-input" class="form-label">New Toll Zone Name</label><input type="text" id="zone-name-input" class="form-input" placeholder="e.g., Electronic City Expressway"></div>
+                    <p class="form-label">Use the tools on the map to draw the zone boundary:</p>
+                    <div id="zone-creator-map"></div>
+                    <button id="save-zone-btn" class="btn btn-green" style="margin-top: 1rem;">Save Zone to Firebase</button>
+                    <div id="zone-creator-status" class="hidden" style="text-align: center; margin-top: 1rem; font-weight: 500;"></div>
+                    <button onclick="showView('main-menu-card')" class="btn" style="background-color: var(--gray-600); margin-top: 0.5rem;">Back to Menu</button>
+                </section>
+
+                <section id="registration-card" class="card hidden">
+                    <h2 class="card-header">2. Register Operator / Camera</h2>
+                    <div class="form-group"><label for="toll-zone-select" class="form-label">Select Toll Zone</label><select id="toll-zone-select" class="form-input"><option value="">Loading toll zones...</option></select></div>
+                    <div class="form-group"><label for="register-camera-id" class="form-label">Camera ID (Login Username)</label><input type="text" id="register-camera-id" class="form-input" placeholder="e.g., CAM-01 (Unique)"></div>
+                    <div class="form-group"><label for="register-password" class="form-label">Password</label><input type="password" id="register-password" class="form-input" placeholder="Min. 6 characters"></div>
+                    <div class="form-group"><label for="register-camera-type" class="form-label">Camera Type</label><select id="register-camera-type" class="form-input"><option value="INTERMEDIATE">Intermediate Point</option><option value="EDGE">Edge Point (Entry/Exit)</option></select></div>
+                    <p class="form-label">Click inside the toll zone to set the camera's location:</p>
+                    <div id="map"></div>
+                    <button id="register-camera-btn" class="btn" style="margin-top: 1rem;">Register Operator</button>
+                    <div id="reg-status" class="hidden" style="text-align: center; margin-top: 1rem; font-weight: 500;"></div>
+                    <button onclick="showView('main-menu-card')" class="btn" style="background-color: var(--gray-600); margin-top: 0.5rem;">Back to Menu</button>
+                </section>
+
+                <section id="login-card" class="card hidden">
+                    <h2 class="card-header">3. Operator Login</h2>
+                    <div class="form-group"><label for="login-cameraid" class="form-label">Camera ID</label><input type="text" id="login-cameraid" class="form-input" placeholder="Enter your Camera ID"></div>
+                    <div class="form-group"><label for="login-password" class="form-label">Password</label><input type="password" id="login-password" class="form-input" placeholder="Enter your password"></div>
+                    <button id="login-btn" class="btn" style="margin-top: 1rem;">Login</button>
+                    <div id="login-status" class="hidden" style="text-align: center; margin-top: 1rem; font-weight: 500;"></div>
+                    <button onclick="showView('main-menu-card')" class="btn" style="background-color: var(--gray-600); margin-top: 0.5rem;">Back to Menu</button>
+                </section>
+
+                <section id="operator-card" class="card hidden">
+                    <h2 id="operator-header" class="card-header">Operator Mode</h2>
+                    <div class="form-group"><label class="form-label">Live Camera Feed</label><video id="video-feed" playsinline autoplay muted></video><button id="start-camera-btn" class="btn btn-small" style="margin-top: 0.5rem;">Start Auto-Scanner</button></div>
+                    <div id="status-container" class="hidden" style="text-align: center; margin-top: 1.5rem; font-weight: 500;"><p id="status-text"></p></div>
+                    <button id="logout-btn" class="btn" style="background-color: var(--gray-600); margin-top: 0.5rem;">Logout</button>
+                </section>
+
+                <section id="pathway-manager-card" class="card hidden">
+                    <h2 class="card-header">4. Pathway Manager</h2>
+                    <p class="form-label" style="margin-bottom: 1rem;">Use this tool to define the ordered driving paths for cameras within a toll zone.</p>
+                    <div class="form-group"><label for="pathway-toll-zone-select" class="form-label">Select Toll Zone to Edit</label><select id="pathway-toll-zone-select" class="form-input"><option value="">Loading toll zones...</option></select></div>
+                    <div class="form-group"><h3 class="form-label" style="font-weight: 600;">Available Cameras in this Zone:</h3><div id="available-cameras-list" style="padding: 0.5rem; background-color: var(--light-gray); border-radius: 0.25rem; min-height: 20px;"></div></div>
+                    <div class="form-group"><label for="pathway-input" class="form-label">New Pathway (comma-separated camera IDs)</label><div style="display: flex; gap: 0.5rem;"><input type="text" id="pathway-input" class="form-input" placeholder="e.g., CAM-01,CAM-02,CAM-03"><button id="add-pathway-btn" class="btn btn-small">Add</button></div></div>
+                    <div class="form-group"><h3 class="form-label" style="font-weight: 600;">Current Pathways to be Saved:</h3><div id="pathways-list-div" style="border: 1px solid var(--gray-400); border-radius: 0.375rem; padding: 0.75rem;"></div></div>
+                    <button id="save-pathways-btn" class="btn btn-green" style="margin-top: 1rem;">Save Pathways to Firebase</button>
+                    <div id="pathway-status" class="hidden" style="text-align: center; margin-top: 1rem; font-weight: 500;"></div>
+                    <button onclick="showView('main-menu-card')" class="btn" style="background-color: var(--gray-600); margin-top: 0.5rem;">Back to Menu</button>
+                </section>
+            </div>
+
+            <section class="card">
+                <h2 class="card-header">Vehicle Trips</h2>
+                <div style="max-height: 700px; overflow-y: auto;">
+                    <table style="table-layout: auto; width: 100%;">
+                        <thead><tr><th>Last Sighting Time</th><th>Plate</th><th>Vehicle</th><th>Status</th><th>Toll Zone</th><th>Last Checkpoint</th><th>Total Toll (₹)</th></tr></thead>
+                        <tbody id="results-table"></tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <canvas id="canvas" class="hidden"></canvas>
+    
+    <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
+
+    <script type="module" src="script.js"></script>
+</body>
+</html>
