@@ -511,15 +511,30 @@ function updatePathwayStatus(message, isError = false) { pathwayStatus.textConte
 
 function renderCurrentPathways() {
     pathwaysListDiv.innerHTML = '';
-    if (currentPathways.length === 0) { pathwaysListDiv.textContent = 'No pathways defined yet. Add one above.'; return; }
+    
+    if (currentPathways.length === 0) { 
+        pathwaysListDiv.textContent = 'No pathways defined yet. Add one above.'; 
+        return; 
+    }
+    
     currentPathways.forEach((path, index) => {
         const pathElement = document.createElement('div');
         pathElement.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background-color: var(--light-gray); border-radius: 0.25rem; margin-bottom: 0.5rem;";
-        pathElement.textContent = path.join(' -> ');
+        
+        // --- THIS IS THE FIX ---
+        // Read the 'path' property from the object
+        pathElement.textContent = path.path.join(' -> ');
+        // --- END FIX ---
+
         const deleteBtn = document.createElement('button');
         deleteBtn.textContent = 'Remove';
         deleteBtn.className = 'btn btn-small btn-red';
-        deleteBtn.onclick = () => { currentPathways.splice(index, 1); renderCurrentPathways(); };
+        
+        deleteBtn.onclick = () => { 
+            currentPathways.splice(index, 1); 
+            renderCurrentPathways(); 
+        };
+        
         pathElement.appendChild(deleteBtn);
         pathwaysListDiv.appendChild(pathElement);
     });
@@ -545,25 +560,52 @@ pathwayTollZoneSelect.addEventListener('change', async () => {
     } catch (e) { updatePathwayStatus('Error fetching zone details.', true); }
 });
 
+// REPLACE your old 'addPathwayBtn.addEventListener' with this:
+
 addPathwayBtn.addEventListener('click', () => {
     const pathText = pathwayInput.value.trim();
     if (!pathText) return;
+    
     const newPath = pathText.split(',').map(id => id.trim().toUpperCase());
-    currentPathways.push(newPath);
+    
+  
+    currentPathways.push({ path: newPath }); 
+ 
+
     renderCurrentPathways();
     pathwayInput.value = '';
     updatePathwayStatus('Pathway added. Click "Save" to commit changes.', false);
 });
 
+
+
 savePathwaysBtn.addEventListener('click', async () => {
     const selectedZoneId = pathwayTollZoneSelect.value;
-    if (!selectedZoneId) { updatePathwayStatus('Please select a toll zone first.', true); return; }
+    
+    // --- DEBUGGING LINES ---
+    console.log('Attempting to save pathways for zone:', selectedZoneId);
+    console.log('Data to save:', currentPathways);
+    // --- END DEBUGGING ---
+
+    if (!selectedZoneId) { 
+        updatePathwayStatus('Please select a toll zone first.', true); 
+        return; 
+    }
+    
     try {
-        await updateDoc(doc(db, "tollZones", selectedZoneId), { operatorPathways: currentPathways });
+        // This is the line that is probably failing
+        await updateDoc(doc(db, "tollZones", selectedZoneId), { 
+            operatorPathways: currentPathways 
+        });
+        
         updatePathwayStatus('Success! Pathways have been saved to Firebase.', false);
+        console.log('Save successful!');
+
     } catch (e) {
-        console.error("Error saving pathways:", e);
-        updatePathwayStatus('Error saving pathways to Firebase.', true);
+        // --- THIS IS THE MOST IMPORTANT PART ---
+        // The error will show up here in your console
+        console.error("FIREBASE SAVE ERROR:", e); 
+        updatePathwayStatus('Error saving pathways to Firebase. Check console for details.', true);
     }
 });
 
