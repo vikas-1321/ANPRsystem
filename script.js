@@ -322,62 +322,89 @@ function startAutoScanner() {
 }
 
 async function processSighting(plateNumber, vehicleType, compressedFile) {
-    if (!loggedInOperator) return;
-    try {
-        const tripsRef = collection(db, "vehicle_trips");
-        const q = query(tripsRef, where("plate", "==", plateNumber), where("status", "==", "active"), where("tollZoneId", "==", loggedInOperator.tollZoneId));
-        const querySnapshot = await getDocs(q);
-        const isNewTrip = querySnapshot.empty;
-        const { location, cameraType, cameraID } = loggedInOperator;
+            if (!loggedInOperator) return;
 
-        if (isNewTrip) {
-            const usersRef = collection(db, "users");
-            const userQuery = query(usersRef, where("vehicleNumber", "==", plateNumber.replace(/-/g, '')));
-            const userSnapshot = await getDocs(userQuery);
-            const vehicleOwnerId = userSnapshot.empty ? null : userSnapshot.docs[0].id;
-            
-            const newTripId = Date.now().toString();
-            const tripDocRef = doc(db, "vehicle_trips", newTripId);
-            const tripData = {
-                plate: plateNumber, userId: vehicleOwnerId, vehicleType, status: 'active',
-                tollZoneId: loggedInOperator.tollZoneId, tollZoneName: loggedInOperator.tollZoneName,
-                entryTimestamp: serverTimestamp(), entryLocation: location,
-                lastSightingTimestamp: serverTimestamp(), lastCheckpoint: cameraID,
-                calculationMethod: 'ANPR', totalToll: 0 
-            };
-            await setDoc(tripDocRef, tripData);
-            const storageRef = ref(storage, `uploads/${tripDocRef.id}/${cameraID}.jpg`);
-            await uploadBytes(storageRef, compressedFile);
-            updateStatus(`New trip for ${plateNumber} started at ${cameraID}.`);
-        } else {
-            const tripDocRef = querySnapshot.docs[0].ref; 
-            const tripData = querySnapshot.docs[0].data();
-            if (tripData.lastCheckpoint === cameraID) throw new Error("Already scanned at this checkpoint.");
+            try {
+                const tripsRef = collection(db, "vehicle_trips");
+                const q = query(tripsRef, 
+                    where("plate", "==", plateNumber), 
+                    where("status", "==", "active"), 
+                    where("tollZoneId", "==", loggedInOperator.tollZoneId)
+                );
+                const querySnapshot = await getDocs(q);
+                const isNewTrip = querySnapshot.empty;
+                const { location, cameraType, cameraID } = loggedInOperator;
 
-            const lastCamLocation = await getCameraLocation(tripData.lastCheckpoint, tripData.tollZoneId);
-            if (!lastCamLocation) throw new Error(`Could not find location for previous camera ${tripData.lastCheckpoint}.`);
+                let tripDocRef;
 
-            const distanceMeters = haversineDistance(lastCamLocation, location) * 1000;
-            const newTotalToll = (tripData.totalToll || 0) + (distanceMeters * TOLL_RATE_PER_METER);
+                if (isNewTrip) {
+                    // --- This part is unchanged ---
+                    // Find the user ID associated with this license plate
+                    const usersRef = collection(db, "users");
+                    const userQuery = query(usersRef, where("vehicleNumber", "==", plateNumber.replace(/-/g, '')));
+                    const userSnapshot = await getDocs(userQuery);
+                    const vehicleOwnerId = userSnapshot.empty ? null : userSnapshot.docs[0].id;
+                    
+                    const newTripId = Date.now().toString();
+                    tripDocRef = doc(db, "vehicle_trips", newTripId);
 
-            const updateData = {
-                lastSightingTimestamp: serverTimestamp(),
-                lastCheckpoint: cameraID,
-                totalToll: newTotalToll
-            };
-            if (cameraType === 'EDGE') updateData.status = 'completed';
-            
-            await updateDoc(tripDocRef, updateData);
-            const storageRef = ref(storage, `uploads/${tripDocRef.id}/${cameraID}.jpg`);
-            await uploadBytes(storageRef, compressedFile);
-            updateStatus(updateData.status === 'completed'
-                ? `Trip for ${plateNumber} COMPLETED. Final Toll: ₹${newTotalToll.toFixed(2)}`
-                : `Trip for ${plateNumber} updated at ${cameraID}.`);
+                    const tripData = {
+                        plate: plateNumber,
+                        userId: vehicleOwnerId,
+                        vehicleType: vehicleType,
+                        status: 'active',
+                        tollZoneId: loggedInOperator.tollZoneId,
+                        tollZoneName: loggedInOperator.tollZoneName,
+                        entryTimestamp: serverTimestamp(),
+                        entryLocation: location, // This is the first camera's location
+                        lastSightingTimestamp: serverTimestamp(),
+                        lastCheckpoint: cameraID,
+                        calculationMethod: 'ANPR', // Default to ANPR
+                        totalToll: 0,
+                        lastKnownGpsLocation: null,
+                        lastGpsUpdateTimestamp: null
+                    };
+                    await setDoc(tripDocRef, tripData);
+                    updateStatus(`New trip for ${plateNumber} started at ${cameraID}.`);
+                
+                } else {
+                    // --- THIS IS THE SIMPLIFIED PART ---
+                    // An active trip exists. Just update the last checkpoint.
+                    // The backend function will handle the toll calculation.
+                    tripDocRef = querySnapshot.docs[0].ref; 
+                    const tripData = querySnapshot.docs[0].data();
+
+                    if (tripData.lastCheckpoint === cameraID) {
+                        throw new Error("Vehicle already scanned at this checkpoint.");
+                    }
+
+                    const updateData = {
+                        lastSightingTimestamp: serverTimestamp(),
+                        lastCheckpoint: cameraID,
+                    };
+                    
+                    // Only an 'EDGE' camera can complete a trip
+                    if (cameraType === 'EDGE') {
+                        updateData.status = 'completed';
+                    }
+                    
+                    await updateDoc(tripDocRef, updateData);
+                    
+                    if (updateData.status === 'completed') {
+                        updateStatus(`Trip for ${plateNumber} COMPLETED at ${cameraID}.`);
+                    } else {
+                        updateStatus(`Trip for ${plateNumber} updated at ${cameraID}.`);
+                    }
+                }
+                
+                // Upload image (no change)
+                const storageRef = ref(storage, `uploads/${tripDocRef.id}/${cameraID}.jpg`);
+                await uploadBytes(storageRef, compressedFile);
+
+            } catch (error) {
+                updateStatus(error.message, true);
+            }
         }
-    } catch (error) {
-        updateStatus(error.message, true);
-    }
-}
 
 // --- Helper & Utility Functions ---
 
@@ -430,23 +457,55 @@ onSnapshot(q, (snapshot) => {
 
 function updateZoneCreatorStatus(message, isError = false) { zoneCreatorStatus.textContent = message; zoneCreatorStatus.classList.remove('hidden'); zoneCreatorStatus.style.color = isError ? 'var(--red)' : 'var(--green)'; }
 
-saveZoneBtn.addEventListener('click', async () => {
-    const zoneName = zoneNameInput.value.trim();
-    if (!zoneName) { updateZoneCreatorStatus('Error: Toll zone name cannot be empty.', true); return; }
-    if (!newZoneCoordinates || newZoneCoordinates.length < 3) { updateZoneCreatorStatus('Error: Please draw a valid polygon on the map (at least 3 points).', true); return; }
-    try {
-        const newZoneData = { name: zoneName, type: "polygon", coordinates: newZoneCoordinates };
-        await addDoc(collection(db, "tollZones"), newZoneData);
-        updateZoneCreatorStatus(`Success! Zone "${zoneName}" saved.`, false);
-        zoneNameInput.value = '';
-        newZoneCoordinates = null;
-        initZoneCreatorMap();
-        loadTollZones();
-    } catch (e) {
-        console.error("Error saving new zone:", e);
-        updateZoneCreatorStatus('Error saving zone to Firebase.', true);
-    }
-});
+// --- Replace your old 'saveZoneBtn.addEventListener' with this ---
+        saveZoneBtn.addEventListener('click', async () => {
+            const zoneName = zoneNameInput.value.trim();
+            if (!zoneName) {
+                updateZoneCreatorStatus('Error: Toll zone name cannot be empty.', true);
+                return;
+            }
+            if (!newZoneCoordinates || newZoneCoordinates.length < 3) {
+                updateZoneCreatorStatus('Error: Please draw a valid polygon on the map (at least 3 points).', true);
+                return;
+            }
+
+            // --- THIS IS THE FIX ---
+            // 1. Calculate the center of the polygon
+            const bounds = new google.maps.LatLngBounds();
+            newZoneCoordinates.forEach(coord => {
+                bounds.extend(new google.maps.LatLng(coord.lat, coord.lng));
+            });
+            const center = bounds.getCenter().toJSON(); // e.g., { lat: 12.34, lng: 77.12 }
+
+            // 2. Calculate the geohash from the new center
+            // We use a precision of 7 (good for city areas)
+            const hash = geohashForLocation([center.lat, center.lng], 7);
+            // --- END FIX ---
+
+            try {
+                const newZoneData = {
+                    name: zoneName,
+                    type: "polygon",
+                    coordinates: newZoneCoordinates,
+                    center: center, // <-- Save the center
+                    geohash: hash   // <-- Save the geohash
+                };
+                
+                await addDoc(collection(db, "tollZones"), newZoneData);
+                updateZoneCreatorStatus(`Success! Zone "${zoneName}" saved.`, false);
+                
+                // Reset the form and reload the dropdowns
+                zoneNameInput.value = '';
+                newZoneCoordinates = null;
+                initZoneCreatorMap(); // Re-initializes the map to clear the old polygon
+                loadTollZones(); // Refresh dropdowns in other tools
+
+            } catch (e) {
+                console.error("Error saving new zone:", e);
+                updateZoneCreatorStatus('Error saving zone to Firebase.', true);
+            }
+        });
+
 
 function updatePathwayStatus(message, isError = false) { pathwayStatus.textContent = message; pathwayStatus.classList.remove('hidden'); pathwayStatus.style.color = isError ? 'var(--red)' : 'var(--green)'; }
 
