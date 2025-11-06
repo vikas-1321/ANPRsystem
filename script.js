@@ -13,7 +13,7 @@ const firebaseConfig = {
     appId: "1:215068074496:web:ed5214d71e02ac4215aee5"
 };
 
-const PLATE_RECOGNIZER_API_KEY = "d14843c5a49518d292466de3adf98a51a1561cd0";
+const PLATE_RECOGNIZER_API_KEY = "e9518eaf38cb7252e3b896bef9c509b5404bd7ad";
 const GOOGLE_MAPS_API_KEY = "AIzaSyANrvOGcFi2KjaHgt9wIn1Y90g0GDlSPOQ"; // Key is stored here now
 
 const app = initializeApp(firebaseConfig);
@@ -267,19 +267,12 @@ document.getElementById('logout-btn').addEventListener('click', logout);
 
 // --- Operator & ANPR Functions ---
 
+
 document.getElementById('start-camera-btn').addEventListener('click', async () => {
-    const btn = document.getElementById('start-camera-btn');
-    if (cameraStream) return logout();
-    try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        videoFeed.srcObject = cameraStream;
-        await videoFeed.play();
-        btn.textContent = "Stop Scanner";
-        updateStatus("Scanner active. Aim at a license plate.", false);
-        finalizedPlates.clear(); candidatePlates.clear();
-        startAutoScanner();
-    } catch (err) {
-        updateStatus("Error: Could not access camera.", true);
+    if (cameraStream) {
+        logout(); // If running, the button's job is to stop
+    } else {
+        startCamera(); // If not running, start it
     }
 });
 
@@ -408,6 +401,24 @@ async function processSighting(plateNumber, vehicleType, compressedFile) {
 
 // --- Helper & Utility Functions ---
 
+// ADD THIS NEW FUNCTION
+async function startCamera() {
+    const btn = document.getElementById('start-camera-btn');
+    if (cameraStream) return; // Already running, do nothing
+
+    try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        videoFeed.srcObject = cameraStream;
+        await videoFeed.play();
+        btn.textContent = "Stop Scanner"; // Set button text to "Stop"
+        updateStatus("Scanner active. Aim at a license plate.", false);
+        finalizedPlates.clear();
+        candidatePlates.clear();
+        startAutoScanner();
+    } catch (err) {
+        updateStatus("Error: Could not access camera.", true);
+    }
+}
 async function getCameraLocation(cameraId, tollZoneId) {
     if (!tollZoneId) {
         const zonesSnapshot = await getDocs(collection(db, "tollZones"));
